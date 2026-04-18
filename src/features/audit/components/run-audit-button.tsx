@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import type { AuditEvent } from "@/features/audit/server/run-audit";
 
 type LogLine = { ts: number; text: string; tone: "info" | "ok" | "warn" | "err" };
@@ -84,10 +84,10 @@ function eventToLine(evt: AuditEvent): LogLine | null {
 }
 
 const toneClass: Record<LogLine["tone"], string> = {
-  info: "text-muted-foreground",
-  ok: "text-emerald-600 dark:text-emerald-400",
-  warn: "text-amber-600 dark:text-amber-400",
-  err: "text-rose-600 dark:text-rose-400",
+  info: "text-ink/80",
+  ok: "text-brand-accent",
+  warn: "text-warning",
+  err: "text-danger",
 };
 
 export function RunAuditButton() {
@@ -143,27 +143,27 @@ export function RunAuditButton() {
 
   return (
     <div className="space-y-3">
-      <Button onClick={onClick} disabled={busy}>
+      <PillButton onClick={onClick} disabled={busy}>
         {busy ? "Running audit…" : "Run audit"}
-      </Button>
+      </PillButton>
 
       {log.length > 0 && (
-        <ul className="space-y-1 rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed">
+        <ul className="space-y-1 rounded-md border border-border bg-canvas p-3 font-mono text-xs leading-relaxed text-ink/80">
           {log.map((line, i) => (
             <li key={i} className={toneClass[line.tone]}>
-              <span className="opacity-50">›</span> {line.text}
+              <span className="text-muted">›</span> {line.text}
             </li>
           ))}
           {busy && (
-            <li className="text-muted-foreground">
-              <span className="opacity-50">›</span> <span className="animate-pulse">working…</span>
+            <li className="text-muted">
+              <span className="text-muted">›</span> <span className="animate-pulse">working…</span>
             </li>
           )}
         </ul>
       )}
 
       {done && (
-        <p className="text-sm text-emerald-600 dark:text-emerald-400">
+        <p className="text-sm text-brand-accent">
           ✓ Audit complete. Project total:{" "}
           <strong>{Math.round(done.totalKgCo2e).toLocaleString()} kg CO₂e</strong> · {done.hotspotCount}{" "}
           hotspot{done.hotspotCount === 1 ? "" : "s"} → {done.suggestionCount} suggestion
