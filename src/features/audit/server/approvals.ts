@@ -6,27 +6,23 @@ import { auth0 } from "@/lib/auth0";
 import { buildLoginHint, initiateCiba, pollCibaToken } from "@/lib/auth0/ciba";
 
 const SCOPE = "openid audit:propose";
-const BINDING_MESSAGE = "Replace cement CEM I with GGBS, save 180 kg CO2e";
+const BINDING_MESSAGE_MAX = 64;
 
-export type ProposalState =
-  | { kind: "ok"; suggestionId: string; authReqId: string }
+export type RequestApprovalState =
+  | { kind: "ok"; authReqId: string; bindingMessage: string }
   | { kind: "error"; message: string };
 
-export type ApprovalState =
+export type CheckApprovalState =
   | { kind: "pending"; nextPollMs: number }
   | { kind: "approved"; approvalId: string }
   | { kind: "denied"; reason: string }
   | { kind: "expired" }
   | { kind: "error"; message: string };
 
-async function upsertUserFromSession(): Promise<{
-  userId: string;
-  auth0Sub: string;
-} | null> {
+async function upsertSessionUser() {
   const session = await auth0.getSession();
   if (!session?.user?.sub) return null;
-
-  const user = await prisma.user.upsert({
+  return prisma.user.upsert({
     where: { auth0Sub: session.user.sub },
     create: {
       auth0Sub: session.user.sub,
@@ -38,72 +34,53 @@ async function upsertUserFromSession(): Promise<{
       name: session.user.name ?? null,
     },
   });
-
-  return { userId: user.id, auth0Sub: user.auth0Sub };
 }
 
-export async function proposeDummyChange(): Promise<ProposalState> {
-  const me = await upsertUserFromSession();
+// Auth0 only allows alphanumerics, whitespace and `+-_.,:#` in binding_message.
+function sanitize(s: string): string {
+  return s.replace(/[^A-Za-z0-9 +\-_.,:#]/g, "");
+}
+
+function buildBindingMessage(originalCode: string, newCode: string, saved: number): string {
+  const savedKg = Math.round(saved);
+  const raw = `Sub ${originalCode} with ${newCode}: save ${savedKg}kg CO2e`;
+  const clean = sanitize(raw);
+  return clean.length <= BINDING_MESSAGE_MAX ? clean : clean.slice(0, BINDING_MESSAGE_MAX);
+}
+
+export async function requestApproval(suggestionId: string): Promise<RequestApprovalState> {
+  const me = await upsertSessionUser();
   if (!me) return { kind: "error", message: "Not signed in." };
 
-  const project =
-    (await prisma.project.findFirst({ where: { ownerId: me.userId } })) ??
-    (await prisma.project.findFirst());
-  if (!project) {
-    return { kind: "error", message: "No projects in DB. Run `npm run db:seed`." };
-  }
-
-  const firstItem = await prisma.bomItem.findFirst({
-    where: { projectId: project.id },
-    include: { material: true },
+  const suggestion = await prisma.suggestion.findUnique({
+    where: { id: suggestionId },
+    include: { originalItem: { include: { material: true } } },
   });
-  if (!firstItem) {
-    return { kind: "error", message: "Project has no BOM items." };
-  }
+  if (!suggestion) return { kind: "error", message: "Suggestion not found." };
 
-  const auditRun = await prisma.auditRun.create({
-    data: {
-      projectId: project.id,
-      status: "COMPLETED",
-      totalKgCo2e: 0,
-      hotspotCount: 1,
-      completedAt: new Date(),
-    },
-  });
-
-  const suggestion = await prisma.suggestion.create({
-    data: {
-      auditRunId: auditRun.id,
-      originalItemId: firstItem.id,
-      proposedMaterialCode: "GGBS-CEM-III-A",
-      proposedMaterialName: "Ground Granulated Blast-furnace Slag (CEM III/A)",
-      kgCo2eSaved: 180,
-      technicalRationale:
-        "Dummy proposal generated to validate the CIBA approval round-trip end-to-end.",
-      status: "PENDING",
-    },
-  });
+  const bindingMessage = buildBindingMessage(
+    suggestion.originalItem.material.code,
+    suggestion.proposedMaterialCode,
+    suggestion.kgCo2eSaved,
+  );
 
   try {
     const ciba = await initiateCiba({
       loginHint: buildLoginHint(me.auth0Sub),
-      bindingMessage: BINDING_MESSAGE,
+      bindingMessage,
       scope: SCOPE,
     });
-    return { kind: "ok", suggestionId: suggestion.id, authReqId: ciba.authReqId };
+    return { kind: "ok", authReqId: ciba.authReqId, bindingMessage };
   } catch (err) {
-    return {
-      kind: "error",
-      message: err instanceof Error ? err.message : String(err),
-    };
+    return { kind: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }
 
 export async function checkApproval(
   authReqId: string,
   suggestionId: string,
-): Promise<ApprovalState> {
-  const me = await upsertUserFromSession();
+): Promise<CheckApprovalState> {
+  const me = await upsertSessionUser();
   if (!me) return { kind: "error", message: "Not signed in." };
 
   const result = await pollCibaToken(authReqId);
@@ -122,9 +99,9 @@ export async function checkApproval(
         ? "REJECTED"
         : "EXPIRED";
 
-  const existingApproval = await prisma.approval.findUnique({ where: { authReqId } });
-  if (existingApproval) {
-    if (decision === "APPROVED") return { kind: "approved", approvalId: existingApproval.id };
+  const existing = await prisma.approval.findUnique({ where: { authReqId } });
+  if (existing) {
+    if (decision === "APPROVED") return { kind: "approved", approvalId: existing.id };
     if (decision === "REJECTED")
       return { kind: "denied", reason: result.status === "denied" ? result.error : "denied" };
     return { kind: "expired" };
@@ -134,7 +111,7 @@ export async function checkApproval(
     prisma.approval.create({
       data: {
         suggestionId,
-        userId: me.userId,
+        userId: me.id,
         authReqId,
         decision,
         rawResponse:
@@ -143,10 +120,7 @@ export async function checkApproval(
             : { status: result.status, ...(result.status === "denied" ? { error: result.error } : {}) },
       },
     }),
-    prisma.suggestion.update({
-      where: { id: suggestionId },
-      data: { status: decision },
-    }),
+    prisma.suggestion.update({ where: { id: suggestionId }, data: { status: decision } }),
   ]);
 
   revalidatePath("/");

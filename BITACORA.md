@@ -381,4 +381,91 @@ goes up before Phase 2.
 
 Risk #4 is now closed with one full day of slack to spare.
 
+## Sun 2026-04-19, 11:00 — Phase 2: real data + Gemini
+
+Mock emissions source first. The scaffold's `mock-data.json` was empty —
+project rule is "no fabricated factors, ICE Database or nothing", so I
+populated it with cradle-to-gate (A1-A3) values from ICE Database v3.0
+(Circular Ecology, free for educational use). 30 stocking-unit factors
+covering binders, aggregates, concrete, masonry, steel, wood, roofing,
+insulation, finishes, electrical, plumbing, openings — plus a handful of
+deliberately included low-carbon alternatives (GGBS-blended concrete, AAC
+blocks, EAF-recycled rebar, cellulose insulation, FSC wood windows,
+reclaimed-wood doors, recycled porcelain tile). Per-kg ICE values converted
+to per-stocking-unit using typical product densities. Honest about it in
+the JSON `__note`.
+
+`createMockEmissionsSource()` parses the JSON through Zod at load time,
+caches, and serves `queryByMaterialCodes` + `queryLowerCarbonAlternatives`.
+
+Gemini client second. `@google/generative-ai` v0.24 with
+`responseMimeType: "application/json"`. Schema described in the prompt,
+validated with Zod on receipt. Single retry with the validation errors fed
+back into the prompt — the two-call pattern mentioned in PLAN.md Risk #3.
+
+Then the audit orchestrator. `runAudit()` (later renamed `streamAudit()`):
+loads BOM, applies factors, computes per-item totals, picks top-5 hotspots
+that each contribute ≥5% of project total, queries up to 4 lower-carbon
+alternatives per hotspot category, calls Gemini, validates, persists
+`AuditRun` + `Suggestion[]` (status PENDING). Each suggestion is then
+individually approvable via CIBA — same `initiateCiba` / `pollCibaToken`
+helpers as M2/M5, but the binding_message is built dynamically from the
+suggestion: `Sub <oldCode> with <newCode>: save <N>kg CO2e`. Sanitized to
+the Auth0 charset (alphanumeric + space + `+-_.,:#`) and capped at 64
+chars.
+
+UI: home page now has "Run audit" + a "Latest run" panel showing the
+totals, hotspots, and per-suggestion `Request approval` buttons.
+
+## Sun 2026-04-19, 11:30 — Two Gemini model gotchas
+
+First test: `gemini-2.0-flash` returned **HTTP 429, limit 0** — "Quota
+exceeded for ... limit: 0". Not "exceeded the free tier", literally *the
+project has zero free quota assigned for this model*. Switched to
+`gemini-1.5-flash`. Got HTTP 404 — *"models/gemini-1.5-flash is not found
+for API version v1beta"*. The 1.5 series is gone from v1beta endpoints.
+
+Current 2026 free tier is **gemini-2.5-flash** (Pro is paid since April
+2026, 2.0 has zero quota by default, 1.5 is removed). Updated `.env` and
+`.env.example` and the Railway prod variable. Worked first call.
+
+Worth flagging in the post: **the "current" Gemini docs don't always agree
+with what your API key can actually call**. Always start with the smallest
+model (`gemini-2.5-flash` or `-flash-lite`) on a fresh key, and treat
+cross-model migration as a real, possibly-breaking step.
+
+## Sun 2026-04-19, 11:45 — Streaming, because silence is broken UX
+
+First version of `runAudit()` was a single server action that took 5-15
+seconds and returned at the end. The user sat in front of a "Running
+audit…" spinner and could not tell whether anything was happening. That's
+the worst thing AI UX is allowed to do in 2026.
+
+Refactored into an **async generator** `streamAudit()` that yields a tagged
+event for each pipeline step (session checked, project loaded, factors
+loaded, hotspots computed with a 3-item preview, alternatives loaded,
+Gemini asking, Gemini responded, persisted, complete). A new
+`POST /api/audit` route handler wraps the generator in a
+**ReadableStream** and emits server-sent events. The client component
+`fetch`es the route, reads the stream with a TextDecoder, splits on `\n\n`,
+parses each `data:` line, and appends a colored log line to a live transcript
+in the page.
+
+Now the user sees:
+
+```
+› Session OK · juan@…
+› Loaded project "Casa 80 m² — Buenos Aires" · 33 BOM items
+› Fetched 30 ICE emission factors
+› Project total: 14,500 kg CO₂e · 5 hotspots → CONC-C25 (4,300 kg, 30%) …
+› Asking gemini-2.5-flash for substitutions on 5 hotspots…
+› Gemini returned 5 proposals
+› Persisted 5 suggestions (audit run a3c12f)
+✓ Audit complete.
+```
+
+Same code paths, dramatically better perceived latency. This is the kind of
+thing that doesn't make it into the architecture diagram but is
+disproportionately what the demo video sells.
+
 <!-- Future entries go below. Keep them short, honest, and specific. -->
