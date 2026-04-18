@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 
-export function AnimatedKg({ value, suffix = "kg CO₂e" }: { value: number; suffix?: string }) {
+export function AnimatedKg({ value, suffix = "" }: { value: number; suffix?: string }) {
   const mv = useMotionValue(0);
   const rounded = useTransform(mv, (v) => Math.round(v).toLocaleString());
   const [display, setDisplay] = useState("0");
@@ -25,7 +25,7 @@ export function AnimatedKg({ value, suffix = "kg CO₂e" }: { value: number; suf
       transition={{ duration: 0.3 }}
       className="tabular-nums"
     >
-      {display} {suffix}
+      {display}{suffix ? ` ${suffix}` : ""}
     </motion.span>
   );
 }
