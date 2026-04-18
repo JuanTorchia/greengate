@@ -267,4 +267,86 @@ push is real — and the same Guardian app on the same phone serves both the
 device, same trust path, two distinct semantic events. That's the shape I
 want for the demo.
 
+## Sat 2026-04-18, 02:35 — Railway DB, the long way
+
+Wanted to provision a managed Postgres so the same DB powers dev and the
+eventual Railway deploy. Ran into two CLI walls:
+
+1. `railway add --database postgres` → *"Unauthorized. Please run `railway
+   login` again."* Even after a fresh login. Same error on `railway deploy
+   --template postgres`. Some specific permission for managed-template
+   deployment is broken on this account.
+2. Fell back to `railway add --service postgres --image postgres:16` —
+   worked, deployed a raw Postgres container. But the raw image only
+   exposes `postgres.railway.internal`, no public TCP proxy, so I can't
+   connect from local Prisma. Public TCP proxy can only be added via
+   dashboard or GraphQL, not the CLI.
+
+Ended up asking for one click in the dashboard ("+ New → Database →
+Postgres") which provisions the managed template with `DATABASE_PUBLIC_URL`
+included out of the box. Pulled it via `railway variable list --service
+Postgres --json` and dropped it in `.env`. `prisma migrate dev --name init`
++ `npm run db:seed` succeeded against the Railway DB on the first try. 30
+materials, 33 BOM items, one Project ("Casa 80 m² — Buenos Aires").
+
+Lesson for the post: **the Railway CLI is not enough for first-time
+managed-database provisioning on every account state**. Document the
+dashboard click-path honestly.
+
+## Sat 2026-04-18, 02:50 — M4 + M5 — propose, poll, persist
+
+`src/lib/auth0/ciba.ts` got real implementations of `initiateCiba` and
+`pollCibaToken` — straight `fetch` calls against the same endpoints I
+already proved with curl in M2. The shape of the helpers stayed the same
+as the scaffold; only the bodies changed.
+
+`src/features/audit/server/dummy-proposal.ts` exposes two server actions:
+`proposeDummyChange()` (upserts the user from session, picks the seeded
+project + first BOM item, writes a stub `AuditRun` + `Suggestion`, calls
+`initiateCiba` with the fixed binding message *"Replace cement CEM I with
+GGBS, save 180 kg CO2e"*, returns `{ authReqId, suggestionId }`) and
+`checkApproval(authReqId, suggestionId)` (single poll; on a terminal
+status, persists the `Approval` row and updates the suggestion status).
+
+UI: a single client component `ProposalButton` driving a state machine
+across `idle → initiating → polling → approved | denied | expired |
+error`. Home page shows the button when signed in plus a list of recent
+approvals from the DB so a judge can see the audit trail without opening
+Prisma Studio.
+
+## Sat 2026-04-18, 02:58 — The `slow_down` trap
+
+First end-to-end run: I clicked the button, the push arrived, I approved
+it on the phone, and the UI sat at *"Waiting for approval…"* forever.
+
+`tail`ed the dev server log: `checkApproval` was running every 3 seconds,
+returning HTTP 200 each time, but never advancing past pending. Hit the
+token endpoint manually with `curl` and the same `auth_req_id`, and Auth0
+came back with:
+
+```json
+{"error":"slow_down","error_description":"You are polling faster than allowed. Try again in 140 seconds."}
+```
+
+My `pollCibaToken` was mapping both `authorization_pending` *and*
+`slow_down` to `{ status: "pending" }`, and the client was looping at 3s.
+Each poll inside the cooldown re-extends the rate limit, so we never
+escape — and the approval Auth0 already had on file never gets to surface.
+The user-visible symptom is "I clicked Allow, why is the page still
+spinning."
+
+Fix: surface `slow_down` distinctly (`{ status: "pending", slowDown:
+true, retryAfterSeconds }`), parse the cooldown out of `error_description`
+(Auth0 puts it in plain English), and have the client back off to whatever
+Auth0 asks for, with a 6-second floor (Auth0's default `interval` is 5s, so
+6 leaves headroom). RFC 9126 actually mandates this back-off behavior;
+I'd cut it on the first pass for speed and paid for it.
+
+Re-tested: click, approve, ~6 seconds later the UI flips to "✓ Approved"
+and the persisted `Approval` row shows up in the list with `auth_req_id`,
+decision, timestamp, and the suggestion details. End-to-end Phase 1 done.
+
+That's M5 — and that's the whole prize-winning flow ready. Phases 2 and 3
+make it richer; Phase 1 is the submission.
+
 <!-- Future entries go below. Keep them short, honest, and specific. -->
