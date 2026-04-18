@@ -56,6 +56,14 @@ const materials: MaterialSeed[] = [
   { code: "WINDOW-PVC-DG", name: "PVC window frame, double glazing", category: "openings", defaultUnit: "m2" },
   { code: "DOOR-WOOD", name: "Solid wood interior door", category: "openings", defaultUnit: "unit" },
   { code: "DOOR-STEEL-EXT", name: "Steel exterior door", category: "openings", defaultUnit: "unit" },
+  // --- Low-carbon alternatives (for suggestions) ---
+  { code: "REBAR-EAF-10", name: "EAF-produced rebar ADN-420 10 mm", category: "steel", defaultUnit: "kg" },
+  { code: "REBAR-EAF-12", name: "EAF-produced rebar ADN-420 12 mm", category: "steel", defaultUnit: "kg" },
+  { code: "ALU-LOWCARBON", name: "Low-carbon aluminium (hydropower)", category: "openings", defaultUnit: "kg" },
+  { code: "ALU-RECYCLED", name: "Recycled aluminium", category: "openings", defaultUnit: "kg" },
+  { code: "CONC-C25-GGBS", name: "Ready-mix concrete C25/30 (50% GGBS)", category: "concrete", defaultUnit: "m3" },
+  { code: "INSUL-WOODFIBRE", name: "Wood-fibre insulation board 50 mm", category: "insulation", defaultUnit: "m2" },
+  { code: "GLASS-RECYCLED", name: "Low-embodied glazing (recycled float)", category: "openings", defaultUnit: "m2" },
 ];
 
 const bomItems: BomItemSeed[] = [
