@@ -28,6 +28,8 @@ model Project {
   areaSqm     Float?
   ownerId     String
   owner       User       @relation(fields: [ownerId], references: [id])
+  responsibleApproverName String @default("")
+  responsibleApproverRole String @default("")
   createdAt   DateTime   @default(now())
   bomItems    BomItem[]
   audits      AuditRun[]
@@ -70,6 +72,12 @@ enum AuditStatus {
   FAILED
 }
 
+enum ReviewStatus {
+  AWAITING_REVIEW
+  IN_REVIEW
+  CLEARED
+}
+
 model AuditRun {
   id           String       @id @default(cuid())
   projectId    String
@@ -77,6 +85,8 @@ model AuditRun {
   status       AuditStatus  @default(RUNNING)
   totalKgCo2e  Float?
   hotspotCount Int?
+  reviewStatus ReviewStatus @default(AWAITING_REVIEW)
+  slaDueAt     DateTime?
   error        String?
   startedAt    DateTime     @default(now())
   completedAt  DateTime?
