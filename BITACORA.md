@@ -216,4 +216,55 @@ with GGBS, -180 kg CO2e."
 
 M1 + M2 done. Onto M3 (`@auth0/nextjs-auth0`).
 
+## Sat 2026-04-18, 02:25 — M3 — `@auth0/nextjs-auth0` v4
+
+The scaffold pinned `@auth0/nextjs-auth0@^4.0.0`, so v4 it is. v4 changed the
+env vars from v3: out goes `AUTH0_ISSUER_BASE_URL` (full URL), in comes
+`AUTH0_DOMAIN` (just the hostname). Out goes `AUTH0_BASE_URL`, in comes
+`APP_BASE_URL`. Confirmed by grepping the installed `dist/` for the actual
+constant names — the docs floating around online still mix the two and you
+can't trust them. Updated `.env` and `.env.example` in lockstep.
+
+The wireup is genuinely tiny in v4 — three files:
+
+```ts
+// src/lib/auth0.ts
+import { Auth0Client } from "@auth0/nextjs-auth0/server";
+export const auth0 = new Auth0Client();
+```
+
+```ts
+// src/middleware.ts
+import type { NextRequest } from "next/server";
+import { auth0 } from "@/lib/auth0";
+export async function middleware(request: NextRequest) {
+  return await auth0.middleware(request);
+}
+export const config = { matcher: [...] };
+```
+
+`src/app/page.tsx` calls `await auth0.getSession()` from a server component
+and renders the user JSON when logged in.
+
+One trip-up: I dropped `middleware.ts` at the project root. With `src/`
+layout in Next.js 16, middleware needs to live at `src/middleware.ts`. Cost
+me one round of *"why is /auth/login returning 404"* until I moved it.
+
+Port juggling: 3000 was held by an unrelated Docker container of mine
+(`maractivades-app`), so Next.js fell back to 3001. Updated the RWA
+callback URLs in Auth0 (via MCP — kept both 3000 and 3001 to avoid breaking
+later) and `APP_BASE_URL` in `.env`. The CIBA flow itself doesn't care —
+only the user-facing OIDC redirect cares about callbacks.
+
+End-to-end check: `http://localhost:3001` → "Log in with Auth0" → Universal
+Login → password → MFA push (Always policy is on, since I set that during
+M1) → approve on phone → redirected to `/` with the user's email and full
+user JSON rendered.
+
+That's all of M3. The session is real, the policy enforcement is real, the
+push is real — and the same Guardian app on the same phone serves both the
+"login MFA" prompt (M3) and the "approve agent action" prompt (M2). Same
+device, same trust path, two distinct semantic events. That's the shape I
+want for the demo.
+
 <!-- Future entries go below. Keep them short, honest, and specific. -->
