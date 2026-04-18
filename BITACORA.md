@@ -84,4 +84,28 @@ don't succeed, I flip the fallback and move on.
 
 ---
 
+## Sat 2026-04-18, 00:40 — Auth0 MCP instead of dashboard clicking
+
+Turns out Auth0 ships an **official MCP server** (`@auth0/auth0-mcp-server`,
+beta). Which means M1 — the "thirty minutes of clicking in the dashboard"
+part — can largely be done by the agent itself. Installed it, authorized it
+against the tenant with device code `QRLQ-FLPT`, and approved a scope set
+covering clients, resource_servers, client_grants, actions, logs, and forms.
+
+Small gotcha: the MCP's `init` command writes to Claude Desktop's config
+path (`~/.config/Claude/claude_desktop_config.json`), not Claude Code's
+(`~/.claude/settings.json`). Moved the server block manually, pinned it to
+the Node 24 binaries I actually have installed.
+
+Meta-observation worth keeping for the post: the project itself is about
+agent-with-human-in-the-loop. And here I am using *an agent* to set up the
+authentication infrastructure *for the agent I'm building*. Turtles all the
+way down, but in a useful way — the tenant-setup work is exactly the kind of
+deterministic config-plumbing that doesn't need a human decision, while the
+*runtime* decisions (approving a material substitution) absolutely do. Two
+different shapes of agent work, one project.
+
+Still on me: install Guardian on the phone, enroll the user. That enrollment
+is *physically* out of scope for any MCP — and that's the right design.
+
 <!-- Future entries go below. Keep them short, honest, and specific. -->
