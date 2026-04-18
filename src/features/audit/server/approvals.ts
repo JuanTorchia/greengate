@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth0 } from "@/lib/auth0";
 import { buildLoginHint, initiateCiba, pollCibaToken } from "@/lib/auth0/ciba";
@@ -65,6 +66,30 @@ function buildBatchBindingMessage(count: number, totalSaved: number): string {
   const raw = `Approve ${count} subs: save ${savedKg}kg CO2e`;
   const clean = sanitize(raw);
   return clean.length <= BINDING_MESSAGE_MAX ? clean : clean.slice(0, BINDING_MESSAGE_MAX);
+}
+
+async function recomputeReviewStatus(auditRunId: string, tx?: Prisma.TransactionClient): Promise<void> {
+  const client = tx ?? prisma;
+  const run = await client.auditRun.findUnique({
+    where: { id: auditRunId },
+    include: { suggestions: { select: { status: true } } },
+  });
+  if (!run) return;
+  const all = run.suggestions;
+  if (all.length === 0) {
+    await client.auditRun.update({ where: { id: auditRunId }, data: { reviewStatus: "CLEARED" } });
+    return;
+  }
+  const terminal = all.every((s) => s.status === "APPROVED" || s.status === "REJECTED" || s.status === "EXPIRED");
+  if (terminal) {
+    await client.auditRun.update({ where: { id: auditRunId }, data: { reviewStatus: "CLEARED" } });
+    return;
+  }
+  const anyDecided = all.some((s) => s.status !== "PENDING");
+  await client.auditRun.update({
+    where: { id: auditRunId },
+    data: { reviewStatus: anyDecided ? "IN_REVIEW" : "AWAITING_REVIEW" },
+  });
 }
 
 export async function requestApproval(suggestionId: string): Promise<RequestApprovalState> {
@@ -141,34 +166,39 @@ export async function checkApproval(
             : { status: result.status, ...(result.status === "denied" ? { error: result.error } : {}) },
       },
     });
-    await tx.suggestion.update({ where: { id: suggestionId }, data: { status: decision } });
-
-    if (decision !== "APPROVED") return;
-
-    const suggestion = await tx.suggestion.findUniqueOrThrow({
+    const updated = await tx.suggestion.update({
       where: { id: suggestionId },
-      include: { originalItem: true },
+      data: { status: decision },
     });
 
-    const emissions = createMockEmissionsSource();
-    const [factor] = await emissions.queryByMaterialCodes([suggestion.proposedMaterialCode]);
-    if (!factor) return;
+    if (decision === "APPROVED") {
+      const suggestion = await tx.suggestion.findUniqueOrThrow({
+        where: { id: suggestionId },
+        include: { originalItem: true },
+      });
 
-    const newMaterial = await tx.material.upsert({
-      where: { code: factor.materialCode },
-      create: {
-        code: factor.materialCode,
-        name: factor.materialName,
-        category: factor.category,
-        defaultUnit: factor.unit,
-      },
-      update: {},
-    });
+      const emissions = createMockEmissionsSource();
+      const [factor] = await emissions.queryByMaterialCodes([suggestion.proposedMaterialCode]);
+      if (factor) {
+        const newMaterial = await tx.material.upsert({
+          where: { code: factor.materialCode },
+          create: {
+            code: factor.materialCode,
+            name: factor.materialName,
+            category: factor.category,
+            defaultUnit: factor.unit,
+          },
+          update: {},
+        });
 
-    await tx.bomItem.update({
-      where: { id: suggestion.originalItem.id },
-      data: { materialId: newMaterial.id },
-    });
+        await tx.bomItem.update({
+          where: { id: suggestion.originalItem.id },
+          data: { materialId: newMaterial.id },
+        });
+      }
+    }
+
+    if (updated.auditRunId) await recomputeReviewStatus(updated.auditRunId, tx);
   });
 
   revalidatePath("/");
@@ -298,6 +328,8 @@ export async function checkBatchApproval(
       });
     }
   });
+
+  await recomputeReviewStatus(auditRunId);
 
   revalidatePath("/");
 

@@ -86,7 +86,12 @@ export async function* streamAudit(): AsyncGenerator<AuditEvent> {
   yield { event: "project-loaded", projectName: project.name, bomItemCount: items.length };
 
   const auditRun = await prisma.auditRun.create({
-    data: { projectId: project.id, status: "RUNNING" },
+    data: {
+      projectId: project.id,
+      status: "RUNNING",
+      reviewStatus: "AWAITING_REVIEW",
+      slaDueAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+    },
   });
 
   try {
@@ -201,6 +206,7 @@ export async function* streamAudit(): AsyncGenerator<AuditEvent> {
         totalKgCo2e: projectTotal,
         hotspotCount: hotspots.length,
         completedAt: new Date(),
+        reviewStatus: suggestionCount === 0 ? "CLEARED" : "AWAITING_REVIEW",
       },
     });
 
