@@ -4,6 +4,7 @@ import { ProjectHeader } from "@/features/project-detail/components/project-head
 import { SummaryTiles } from "@/features/project-detail/components/summary-tiles";
 import { BomTable, type BomRow } from "@/features/project-detail/components/bom-table";
 import { SuggestionCard, type SuggestionCardData } from "@/features/project-detail/components/suggestion-card";
+import { BatchApprovalModal } from "@/features/project-detail/components/batch-approval-modal";
 import { createMockEmissionsSource } from "@/lib/emissions/mock";
 import type { StatusKind } from "@/components/ui/status-badge";
 
@@ -103,9 +104,29 @@ export default async function ProjectDetailPage({
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-medium text-brand-primary">
-          Agent suggestions ({run?.suggestions.length ?? 0})
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-medium text-brand-primary">
+            Agent suggestions ({run?.suggestions.length ?? 0})
+          </h2>
+          {run && run.suggestions.filter((s) => s.status === "PENDING").length >= 2 && (
+            <BatchApprovalModal
+              auditRunId={run.id}
+              pendingCount={run.suggestions.filter((s) => s.status === "PENDING").length}
+              totalSaved={run.suggestions
+                .filter((s) => s.status === "PENDING")
+                .reduce((a, s) => a + s.kgCo2eSaved, 0)}
+              approverName={project.responsibleApproverName}
+              approverRole={project.responsibleApproverRole}
+              preview={run.suggestions
+                .filter((s) => s.status === "PENDING")
+                .map((s) => ({
+                  originalCode: s.originalItem.material.code,
+                  proposedCode: s.proposedMaterialCode,
+                  saved: s.kgCo2eSaved,
+                }))}
+            />
+          )}
+        </div>
         {run && run.suggestions.length > 0 ? (
           <div className="space-y-4">
             {run.suggestions.map((s) => {
