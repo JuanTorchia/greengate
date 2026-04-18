@@ -1,0 +1,4 @@
+{
+  "__note": "Populate `factors` with a small subset from the ICE Database v3.0 (Circular Ecology, free educational licence) before running with EMISSIONS_SOURCE=mock. DO NOT commit fabricated values.",
+  "factors": []
+}

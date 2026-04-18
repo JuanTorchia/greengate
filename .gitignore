@@ -1,0 +1,35 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+build/
+dist/
+
+# env
+.env
+.env*.local
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-error.log
+
+# ts
+*.tsbuildinfo
+next-env.d.ts
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# prisma local
+prisma/*.db
+prisma/*.db-journal
+
+# railway
+.railway/

@@ -1,0 +1,128 @@
+// GreenGate operational schema.
+// Emission factors live in Snowflake (see src/lib/snowflake/client.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Auth0 user identity, mirrored locally for FK purposes.
+model User {
+  id        String     @id @default(cuid())
+  auth0Sub  String     @unique
+  email     String     @unique
+  name      String?
+  createdAt DateTime   @default(now())
+  projects  Project[]
+  approvals Approval[]
+}
+
+model Project {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  areaSqm     Float?
+  ownerId     String
+  owner       User       @relation(fields: [ownerId], references: [id])
+  createdAt   DateTime   @default(now())
+  bomItems    BomItem[]
+  audits      AuditRun[]
+
+  @@index([ownerId])
+}
+
+// Local catalog of materials referenced by BOM items. `code` joins with
+// Snowflake EMISSION_FACTORS.MATERIAL_CODE.
+model Material {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  category    String
+  defaultUnit String
+  bomItems    BomItem[]
+}
+
+model BomItem {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+  quantity   Float
+  unit       String
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  suggestionsAsOriginal Suggestion[] @relation("OriginalItem")
+
+  @@index([projectId])
+  @@index([materialId])
+}
+
+enum AuditStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model AuditRun {
+  id           String       @id @default(cuid())
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id])
+  status       AuditStatus  @default(RUNNING)
+  totalKgCo2e  Float?
+  hotspotCount Int?
+  error        String?
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
+  suggestions  Suggestion[]
+
+  @@index([projectId])
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model Suggestion {
+  id                   String           @id @default(cuid())
+  auditRunId           String
+  auditRun             AuditRun         @relation(fields: [auditRunId], references: [id])
+  originalItemId       String
+  originalItem         BomItem          @relation("OriginalItem", fields: [originalItemId], references: [id])
+  proposedMaterialCode String
+  proposedMaterialName String
+  kgCo2eSaved          Float
+  technicalRationale   String
+  riskNotes            String?
+  status               SuggestionStatus @default(PENDING)
+  createdAt            DateTime         @default(now())
+  approval             Approval?
+
+  @@index([auditRunId])
+  @@index([originalItemId])
+}
+
+// Audit trail for every CIBA decision. `authReqId` is the Auth0
+// `auth_req_id` returned by /bc-authorize; judges will look at this.
+model Approval {
+  id           String           @id @default(cuid())
+  suggestionId String           @unique
+  suggestion   Suggestion       @relation(fields: [suggestionId], references: [id])
+  userId       String
+  user         User             @relation(fields: [userId], references: [id])
+  authReqId    String           @unique
+  decision     SuggestionStatus
+  decidedAt    DateTime         @default(now())
+  rawResponse  Json?
+
+  @@index([userId])
+}
