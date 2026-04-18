@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { loadProjectDetail } from "@/features/project-detail/server/project-detail-data";
 import { ProjectHeader } from "@/features/project-detail/components/project-header";
 import { SummaryTiles } from "@/features/project-detail/components/summary-tiles";
+import { BomTable, type BomRow } from "@/features/project-detail/components/bom-table";
+import { createMockEmissionsSource } from "@/lib/emissions/mock";
 import type { StatusKind } from "@/components/ui/status-badge";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +46,33 @@ export default async function ProjectDetailPage({
   const approvedSavings =
     run?.suggestions.filter((s) => s.status === "APPROVED").reduce((a, s) => a + s.kgCo2eSaved, 0) ?? 0;
   const potentialSavings = pendingSavings + approvedSavings;
+
+  const emissions = createMockEmissionsSource();
+  const uniqueCodes = Array.from(new Set(project.bomItems.map((i) => i.material.code)));
+  const factors = await emissions.queryByMaterialCodes(uniqueCodes);
+  const factorByCode = new Map(factors.map((f) => [f.materialCode, f]));
+  const rowsUnranked: BomRow[] = project.bomItems.map((item, i) => {
+    const factor = factorByCode.get(item.material.code);
+    const kgCo2e = (factor?.kgCo2ePerUnit ?? 0) * item.quantity;
+    return {
+      index: i + 1,
+      code: item.material.code,
+      name: item.material.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      kgCo2e,
+      hotspotRank: null,
+    };
+  });
+  const sortedByImpact = [...rowsUnranked].sort((a, b) => b.kgCo2e - a.kgCo2e);
+  sortedByImpact.slice(0, 4).forEach((r, idx) => {
+    const match = rowsUnranked.find((x) => x.index === r.index);
+    if (match) match.hotspotRank = idx + 1;
+  });
+  const top4Sum = sortedByImpact.slice(0, 4).reduce((a, r) => a + r.kgCo2e, 0);
+  const totalFromRows = rowsUnranked.reduce((a, r) => a + r.kgCo2e, 0);
+  const hotspotPct = totalFromRows > 0 ? Math.round((top4Sum / totalFromRows) * 100) : 0;
+
   const status = run
     ? deriveStatus(run.reviewStatus, run.slaDueAt)
     : "AWAITING";
@@ -64,12 +93,13 @@ export default async function ProjectDetailPage({
         potentialSavingKg={potentialSavings}
         hotspotCount={hotspotCount}
         lineItemCount={project.bomItems.length}
-        hotspotPctOfTotal={72 /* placeholder — BOM table computes the exact figure in Task 11 */}
+        hotspotPctOfTotal={hotspotPct}
       />
 
-      <p className="text-sm text-muted">
-        BOM table and suggestions list render in follow-up tasks.
-      </p>
+      <section className="space-y-3">
+        <h2 className="text-xl font-medium text-brand-primary">Bill of Materials</h2>
+        <BomTable rows={rowsUnranked} />
+      </section>
     </div>
   );
 }
