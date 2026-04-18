@@ -1,127 +1,136 @@
-# GreenGate — Hackathon Sprint Plan
+# GreenGate — Sprint Plan (revised)
 
-**Submission target**: DEV.to Weekend Challenge — Earth Day Edition
-**Primary prize category**: Best Use of Auth0 for Agents ($100 + DEV++ + badge)
-**Secondary categories**: Snowflake, Google Gemini
+**Submission**: DEV.to Weekend Challenge — Earth Day Edition
+**Primary prize**: Best Use of Auth0 for Agents
 **Deadline**: Monday 2026-04-20, 06:59 UTC (03:59 AR, UTC-3)
-**Sprint window**: Friday 2026-04-17 23:58 AR → Monday 2026-04-20 03:59 AR (~52h wall-clock)
-**Effective work time**: ~27h (52h minus 16h sleep, 5h meals/breaks, 4h submission tasks)
+**Working mode**: continuous, sleep only when required
 
-> All times in this plan are **Argentina (UTC-3)** unless stated otherwise.
-> CP = Critical Path (hard stop). B = Buffer (absorbable slip).
+> Phases replace the hour-by-hour schedule. Phase 1 ships the submission on its
+> own — Phases 2 and 3 make it richer, but they are additive.
 
 ---
 
-## Schedule
+## Priorities
 
-### Day 0 — Friday night (sprint kickoff)
+1. **Auth0 CIBA end-to-end.** This is the prize narrative. Ship it first.
+2. **Real data behind the flow** (Snowflake + Gemini). Elevates the demo,
+   but Phase 1 must already feel complete without them.
+3. **Polish + deploy + demo video + DEV.to post.** The post is the main
+   artifact the judges read — it's backed by the bitácora, not rewritten
+   from scratch.
 
-| Time (AR)       | Duration | Task                                                                | CP/B |
-|-----------------|----------|---------------------------------------------------------------------|------|
-| 23:58 → 01:30   | 1h30m    | Review PLAN.md, approve scaffold + skeletons, `git init`, push repo | CP   |
-| 01:30 → 09:30   | 8h       | Sleep                                                               | —    |
+---
 
-### Day 1 — Saturday
+## Phase 1 — Auth0 CIBA end-to-end (top priority)
 
-| Time (AR)       | Duration | Task                                                                                              | CP/B |
-|-----------------|----------|---------------------------------------------------------------------------------------------------|------|
-| 09:30 → 10:00   | 30m      | Breakfast                                                                                         | —    |
-| 10:00 → 12:30   | 2h30m    | `npm install`, Prisma migrate + seed, local `next dev` green, Auth0 Universal Login wired         | CP   |
-| 12:30 → 13:30   | 1h       | Lunch                                                                                             | —    |
-| 13:30 → 16:00   | 2h30m    | Snowflake trial signup + ICE Database v3.0 CSV upload via Snowsight + verify query in Snowsight   | CP   |
-| 16:00 → 16:30   | 30m      | Break                                                                                             | —    |
-| 16:30 → 17:30   | 1h       | Wire `snowflake-sdk` in `src/lib/snowflake/client.ts`, integration test from Node REPL            | CP   |
-| 17:30 → 21:00   | 3h30m    | Gemini: API key, `@google/generative-ai`, prompt + structured output + Zod validation, end-to-end with mock hotspots | CP |
-| 21:00 → 22:00   | 1h       | Dinner                                                                                            | —    |
-| 22:00 → 01:00   | 3h       | Auth0 tenant, CIBA app config, install Guardian on phone, first successful `/bc-authorize` → push → response from local server | **CP (critical)** |
-| 01:00 → 09:00   | 8h       | Sleep                                                                                             | —    |
+Strict-order milestones:
 
-### Day 2 — Sunday
+- **M1** — Auth0 tenant ready. Regular Web App configured for Universal Login.
+  M2M application configured with the CIBA grant. Auth0 Guardian installed on
+  phone and enrolled. *(Human action — see checklist below.)*
+- **M2** — Bare `/bc-authorize` POST (from `curl` or Node REPL) returns an
+  `auth_req_id` and the phone shows the `binding_message`. **This is the
+  earliest risk-killer.** If Guardian does not render the binding message,
+  switch to MFA OOB Push immediately (Risk #1) — do not loop on CIBA docs.
+- **M3** — `@auth0/nextjs-auth0` wired. User logs in with Universal Login.
+  Session is readable from server actions.
+- **M4** — `initiateCiba` + `pollCibaToken` implemented. A dummy server action
+  (`proposeDummyChange`) triggers a push, polls, receives the decision, and
+  persists an `Approval` row with `auth_req_id`, `userId`, timestamp, decision.
+- **M5** — Minimal UI: "Propose a test change" button, pending/approved/denied
+  state, the persisted Approval record visible in the page for honesty.
 
-| Time (AR)       | Duration | Task                                                                                              | CP/B |
-|-----------------|----------|---------------------------------------------------------------------------------------------------|------|
-| 09:00 → 09:30   | 30m      | Breakfast                                                                                         | —    |
-| 09:30 → 13:00   | 3h30m    | Audit orchestrator: fetch BOM → Snowflake factors → hotspots → Gemini → CIBA → persist approval → BOM update | **CP (critical)** |
-| 13:00 → 14:00   | 1h       | Lunch                                                                                             | —    |
-| 14:00 → 17:30   | 3h30m    | UI: dashboard, BOM table, suggestions panel, approval status indicator, Framer Motion carbon delta | CP   |
-| 17:30 → 18:00   | 30m      | Break                                                                                             | —    |
-| 18:00 → 21:00   | 3h       | Deploy to Railway (env vars, Postgres addon, domain), e2e smoke test in prod                      | **CP (critical)** |
-| 21:00 → 22:00   | 1h       | Dinner                                                                                            | —    |
-| 22:00 → 00:30   | 2h30m    | Record demo video (2 takes, edit winning one)                                                     | CP   |
-| 00:30 → 02:30   | 2h       | Write DEV.to post, prepare submission                                                             | CP   |
-| 02:30 → 03:30   | 1h       | Final polish + submission buffer                                                                  | B    |
-| **03:59 Mon**   | —        | **SUBMISSION DEADLINE (06:59 UTC)**                                                               | —    |
+**Phase 1 is independently demo-able.** If Phase 2 derails, Phase 1 alone is a
+credible submission for the Auth0 prize category.
 
-### Critical-path hard stops
+### M1 action checklist (has to be you, not code)
 
-| Deadline (AR) | Must be true                                                |
-|---------------|-------------------------------------------------------------|
-| Sat 13:00     | Local stack boots, seed succeeds, Auth0 login works         |
-| Sat 17:30     | Snowflake returns factors to Node                           |
-| Sat 21:00     | Gemini returns valid structured JSON end-to-end             |
-| Sun 01:00     | CIBA push arrives on Guardian, token returned to server     |
-| Sun 13:00     | Full orchestrator wired end-to-end against real services    |
-| Sun 18:00     | **Feature freeze.** No new code after this — only polish.   |
-| Sun 21:00     | Deployed URL live and responding                            |
-| Mon 02:30     | Submission draft complete                                   |
+1. Create an Auth0 tenant (free dev tenant is fine):
+   https://auth0.com/signup
+2. Regular Web App for Universal Login:
+   - Callback URL: `http://localhost:3000/auth/callback`
+   - Logout URL: `http://localhost:3000`
+   - Copy `Domain`, `Client ID`, `Client Secret` → `.env`
+3. Enable CIBA on the tenant:
+   - Dashboard → Authentication → Authentication Profile → turn on
+     "Client-Initiated Backchannel Authentication (CIBA)"
+   - Configure an authenticator (Guardian push) at Tenant Settings → MFA.
+4. Create a second application for the CIBA grant:
+   - Type: Machine-to-Machine
+   - Grant types: include `urn:openid:params:grant-type:ciba`
+   - Authorize it for an API (create one if you don't have it; set Audience)
+   - Copy `Client ID`, `Client Secret`, `Audience` → `.env` under
+     `AUTH0_CIBA_*`
+5. Install **Auth0 Guardian** on your phone and enroll the user you'll use for
+   the demo (enroll under the same Auth0 tenant, via Universal Login MFA).
+
+When all five are done, M1 is complete.
+
+---
+
+## Phase 2 — Real data (only after Phase 1 is green)
+
+Picked greedily. Skip blocked items rather than waiting.
+
+- **Snowflake**: trial signup, ICE Database v3.0 CSV upload via Snowsight,
+  `snowflake-sdk` client implemented, query from Node verified.
+- **Gemini**: API key, structured output with `responseMimeType: application/json`
+  and `responseSchema`, Zod validation at the boundary.
+- **Audit orchestrator**: combine BOM × factors → hotspots → Gemini →
+  `initiateCiba` with a real, human-readable binding message. Replaces the
+  Phase 1 dummy suggestion.
+
+Fallbacks (applied on first sign of slip):
+- Snowflake slips → `EMISSIONS_SOURCE=mock` with a small ICE subset.
+  The BOM math + Gemini call still work. README explains it honestly.
+- Gemini slips → hand-craft one realistic substitution server-side and note the
+  architectural seam. The CIBA roundtrip is still real.
+
+---
+
+## Phase 3 — Ship it
+
+- Dashboard UI: BOM table, hotspot highlights, suggestions panel, approval
+  status, Framer Motion carbon-delta animation on approval.
+- **Railway deploy early and often.** Do not leave deploy to the last hour.
+- Demo video: OBS/Loom. Script is pre-written from the bitácora. Record once
+  the deployed flow works end-to-end; second take wins.
+- DEV.to post: drafted from `BITACORA.md`. Opens on embodied-carbon as a
+  neglected problem, closes on why human-in-the-loop is the right pattern for
+  agents in regulated domains.
 
 ---
 
 ## Risk register
 
-| # | Risk                                                                    | Prob | Impact   | Mitigation                                                                                 | Fallback                                                                                               |
-|---|-------------------------------------------------------------------------|------|----------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| 1 | Auth0 Guardian does not render the CIBA `binding_message` as expected   | Med  | Critical | Verify docs at start of Sat 22:00 block before coding; test bare `/bc-authorize` first     | Auth0 MFA OOB Push (`/mfa/challenge` + `/oauth/token` grant `mfa-oob`). Still Auth0, still async, still human-in-the-loop. |
-| 2 | Snowflake trial signup delays (phone verification, account provisioning)| Low  | High     | Start signup at 13:30 Sat sharp; have ICE CSV ready offline                                | Use Postgres `emission_factors` table with same schema. README explains "prod uses Snowflake".         |
-| 3 | Gemini structured-output JSON drifts off Zod schema                     | Med  | Med      | Zod runtime validation; retry-with-reprompt on parse failure; keep schema tight            | Two-call pattern: freeform → JSON-extraction call with `response_mime_type: application/json`.         |
-| 4 | Railway deploy fails (build error, env var, cold start, Postgres conn)  | Med  | High     | Deploy continuously from Sat afternoon — don't leave deploy to Sun night                   | Vercel deploy as hot backup (Postgres stays on Railway, point `DATABASE_URL` across).                  |
-| 5 | Demo video recording eats into submission time                          | Med  | High     | Pre-write script during Sat UI block; single-screen OBS setup ready Sat evening            | Fall back to annotated screenshots + narration in DEV.to post.                                         |
+| # | Risk                                                                     | Prob | Impact   | Mitigation                                                                                 | Fallback                                                                                               |
+|---|--------------------------------------------------------------------------|------|----------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
+| 1 | Auth0 Guardian does not render CIBA `binding_message`                    | Med  | Critical | Verify at M2 with a bare POST before writing any integration code                         | Auth0 MFA OOB Push (`/mfa/challenge` + grant `mfa-oob`). Still Auth0, still async, still human-in-the-loop. |
+| 2 | Snowflake trial signup delays (phone/email verification)                 | Low  | Med      | Only hit when Phase 2 starts; ICE CSV is ready offline                                    | Postgres `emission_factors` table with same schema + `EMISSIONS_SOURCE=mock`.                         |
+| 3 | Gemini structured-output JSON drifts off Zod schema                      | Med  | Low      | Zod runtime validation; retry-with-reprompt on parse failure                              | Two-call pattern (freeform → JSON extraction), or hard-coded fallback substitution.                   |
+| 4 | Railway deploy issues surface late                                       | Med  | High     | Deploy during Phase 1 once login works — don't wait                                       | Vercel as hot backup (DB stays on Railway; `DATABASE_URL` points across).                             |
+| 5 | Demo video recording eats into submission time                           | Med  | High     | Script written during UI work; single OBS scene ready before first take                   | Annotated screenshots + narration in the post.                                                        |
 
 ---
 
 ## Go / No-Go checkpoints
 
-| When (AR)   | Check                                                                        | No-go action                                                                 |
-|-------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| Sat 16:00   | Snowflake ingested ICE data and queryable via Snowsight?                     | Switch to Postgres fallback (Risk #2). Carry on.                             |
-| Sat 20:00   | Gemini returning valid JSON matching Zod schema 3 times in a row?            | Switch to two-call extraction pattern.                                       |
-| Sun 01:00   | Phone received Guardian push with correct binding message?                   | Switch to MFA OOB Push flow. Update DEV.to narrative accordingly.            |
-| Sun 13:00   | End-to-end audit flow works locally (button → suggestion → push → apply)?    | Cut audit-run history list. Keep core flow only.                             |
-| Sun 18:00   | **Feature freeze.** Working locally end-to-end?                              | If NO: cut suggestions panel animation, ship static. If YES: deploy only.    |
-| Sun 21:00   | Deployed URL responds and demo flow works in prod?                           | Submit with local screencast + README caveat + promise of deployed URL in comments. |
+Triggered off milestones and the absolute deadline (03:59 AR Mon).
+
+- **M2 fails** → switch to MFA OOB Push. Don't spend more than two attempts on CIBA docs.
+- **M4 fails 3× in a row** → stop, re-read the Auth0 CIBA flow end-to-end before retrying.
+- **12h before deadline, Phase 1 incomplete** → cut Phase 2, ship Phase 1 with one
+  staged/hypothetical substitution, be explicit in the post about what shipped.
+- **6h before deadline** → feature freeze. Only deploy, video, post.
+- **2h before deadline** → submit whatever works. No new commits.
 
 ---
 
-## Order of attack for the 3 highest-risk integrations
+## Non-negotiables (restated)
 
-Chosen order: **Snowflake → Gemini → Auth0 CIBA**.
-
-Reasoning:
-- **Snowflake** is non-interactive infra. Unlocks the data layer so Gemini has something real to work with.
-- **Gemini** is fully local dev (no external human action required). Fastest feedback loop.
-- **Auth0 CIBA** is the demo centerpiece and requires phone + Guardian. Best tackled with a clear head, after dinner, with all other integrations verified so nothing else can distract or block.
-
-If you want to flip this (e.g., attack Auth0 first because it's the prize), raise it before Sat 10:00.
-
----
-
-## Parallel-work opportunities
-
-Whenever blocked on external work (Snowflake query running, CIBA polling, Gemini request), switch to:
-- README content
-- DEV.to post draft
-- Demo-video shot list
-- Prisma seed data review
-
-Never sit idle waiting on an external service.
-
----
-
-## Non-negotiables (from brief, restated)
-
-- English-only in all code, comments, commits, docs, DEV.to post.
-- No fake emission factors. Empty table + `TODO: load from ICE Database` placeholder.
+- English-only in code, comments, commits, docs, DEV.to post.
+- No fabricated emission factors. ICE Database or nothing.
 - No invented APIs. `// VERIFY:` + docs URL for anything uncertain.
-- Zero extra dependencies beyond those listed in the scaffold.
-- Gemini system prompt + schema live in `src/lib/gemini/prompts/audit-suggestion.ts` as versioned constants.
-- Every CIBA approval persists `auth_req_id`, timestamp, decision, user ID — judges will read this.
+- Zero extra dependencies beyond those already scaffolded.
+- Every approval persists `auth_req_id` + userId + timestamp + decision.
+- BITACORA.md is updated on every meaningful decision or milestone.
