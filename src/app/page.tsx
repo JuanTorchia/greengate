@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/prisma";
 import { RunAuditButton } from "@/features/audit/components/run-audit-button";
 import { ApprovalButton } from "@/features/audit/components/approval-button";
+import { BatchApprovalButton } from "@/features/audit/components/batch-approval-button";
+import { AnimatedKg } from "@/features/audit/components/animated-kg";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,16 @@ export default async function HomePage() {
         },
       })
     : [];
+
+  const savedAgg = session
+    ? await prisma.suggestion.aggregate({
+        where: { status: "APPROVED" },
+        _sum: { kgCo2eSaved: true },
+        _count: true,
+      })
+    : null;
+  const totalSaved = savedAgg?._sum.kgCo2eSaved ?? 0;
+  const approvedCount = savedAgg?._count ?? 0;
 
   return (
     <main className="mx-auto max-w-4xl space-y-10 p-8">
@@ -65,6 +77,21 @@ export default async function HomePage() {
         )}
       </section>
 
+      {session && approvedCount > 0 && (
+        <section className="rounded-lg border bg-emerald-50/40 p-6 dark:bg-emerald-950/20">
+          <h2 className="text-xl font-medium">Carbon saved by approvals</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sum of <code>kgCo2eSaved</code> across {approvedCount} approved
+            substitution{approvedCount === 1 ? "" : "s"}. The matching{" "}
+            <code>BomItem</code>s have been mutated to point at the proposed
+            materials.
+          </p>
+          <p className="mt-4 text-3xl font-semibold tracking-tight text-emerald-700 dark:text-emerald-300">
+            − <AnimatedKg value={totalSaved} />
+          </p>
+        </section>
+      )}
+
       {session && (
         <section className="rounded-lg border p-6">
           <h2 className="text-xl font-medium">Audit</h2>
@@ -95,6 +122,20 @@ export default async function HomePage() {
             {latestRun.hotspotCount === 1 ? "" : "s"} · {latestRun.suggestions.length} suggestion
             {latestRun.suggestions.length === 1 ? "" : "s"}
           </p>
+
+          {(() => {
+            const pendingSuggestions = latestRun.suggestions.filter((s) => s.status === "PENDING");
+            const pendingTotalSaved = pendingSuggestions.reduce((s, x) => s + x.kgCo2eSaved, 0);
+            return pendingSuggestions.length >= 2 ? (
+              <div className="mt-4">
+                <BatchApprovalButton
+                  auditRunId={latestRun.id}
+                  pendingCount={pendingSuggestions.length}
+                  totalSaved={pendingTotalSaved}
+                />
+              </div>
+            ) : null;
+          })()}
 
           {latestRun.suggestions.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">

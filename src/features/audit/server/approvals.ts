@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { auth0 } from "@/lib/auth0";
 import { buildLoginHint, initiateCiba, pollCibaToken } from "@/lib/auth0/ciba";
+import { createMockEmissionsSource } from "@/lib/emissions/mock";
 
 const SCOPE = "openid audit:propose";
 const BINDING_MESSAGE_MAX = 64;
@@ -15,6 +16,17 @@ export type RequestApprovalState =
 export type CheckApprovalState =
   | { kind: "pending"; nextPollMs: number }
   | { kind: "approved"; approvalId: string }
+  | { kind: "denied"; reason: string }
+  | { kind: "expired" }
+  | { kind: "error"; message: string };
+
+export type RequestBatchState =
+  | { kind: "ok"; authReqId: string; bindingMessage: string; count: number; totalSaved: number }
+  | { kind: "error"; message: string };
+
+export type CheckBatchState =
+  | { kind: "pending"; nextPollMs: number }
+  | { kind: "approved"; appliedCount: number }
   | { kind: "denied"; reason: string }
   | { kind: "expired" }
   | { kind: "error"; message: string };
@@ -44,6 +56,13 @@ function sanitize(s: string): string {
 function buildBindingMessage(originalCode: string, newCode: string, saved: number): string {
   const savedKg = Math.round(saved);
   const raw = `Sub ${originalCode} with ${newCode}: save ${savedKg}kg CO2e`;
+  const clean = sanitize(raw);
+  return clean.length <= BINDING_MESSAGE_MAX ? clean : clean.slice(0, BINDING_MESSAGE_MAX);
+}
+
+function buildBatchBindingMessage(count: number, totalSaved: number): string {
+  const savedKg = Math.round(totalSaved);
+  const raw = `Approve ${count} subs: save ${savedKg}kg CO2e`;
   const clean = sanitize(raw);
   return clean.length <= BINDING_MESSAGE_MAX ? clean : clean.slice(0, BINDING_MESSAGE_MAX);
 }
@@ -99,7 +118,7 @@ export async function checkApproval(
         ? "REJECTED"
         : "EXPIRED";
 
-  const existing = await prisma.approval.findUnique({ where: { authReqId } });
+  const existing = await prisma.approval.findFirst({ where: { authReqId, suggestionId } });
   if (existing) {
     if (decision === "APPROVED") return { kind: "approved", approvalId: existing.id };
     if (decision === "REJECTED")
@@ -107,8 +126,10 @@ export async function checkApproval(
     return { kind: "expired" };
   }
 
-  await prisma.$transaction([
-    prisma.approval.create({
+  // Persist Approval + flip Suggestion status, and on APPROVED also apply
+  // the substitution to the BomItem (close the loop).
+  await prisma.$transaction(async (tx) => {
+    await tx.approval.create({
       data: {
         suggestionId,
         userId: me.id,
@@ -119,16 +140,168 @@ export async function checkApproval(
             ? (result.rawResponse as object)
             : { status: result.status, ...(result.status === "denied" ? { error: result.error } : {}) },
       },
-    }),
-    prisma.suggestion.update({ where: { id: suggestionId }, data: { status: decision } }),
-  ]);
+    });
+    await tx.suggestion.update({ where: { id: suggestionId }, data: { status: decision } });
+
+    if (decision !== "APPROVED") return;
+
+    const suggestion = await tx.suggestion.findUniqueOrThrow({
+      where: { id: suggestionId },
+      include: { originalItem: true },
+    });
+
+    const emissions = createMockEmissionsSource();
+    const [factor] = await emissions.queryByMaterialCodes([suggestion.proposedMaterialCode]);
+    if (!factor) return;
+
+    const newMaterial = await tx.material.upsert({
+      where: { code: factor.materialCode },
+      create: {
+        code: factor.materialCode,
+        name: factor.materialName,
+        category: factor.category,
+        defaultUnit: factor.unit,
+      },
+      update: {},
+    });
+
+    await tx.bomItem.update({
+      where: { id: suggestion.originalItem.id },
+      data: { materialId: newMaterial.id },
+    });
+  });
 
   revalidatePath("/");
 
   if (result.status === "approved") {
-    const approval = await prisma.approval.findUnique({ where: { authReqId } });
+    const approval = await prisma.approval.findFirst({
+      where: { authReqId, suggestionId },
+      orderBy: { decidedAt: "desc" },
+    });
     return { kind: "approved", approvalId: approval!.id };
   }
   if (result.status === "denied") return { kind: "denied", reason: result.error };
+  return { kind: "expired" };
+}
+
+export async function requestBatchApproval(auditRunId: string): Promise<RequestBatchState> {
+  const me = await upsertSessionUser();
+  if (!me) return { kind: "error", message: "Not signed in." };
+
+  const pending = await prisma.suggestion.findMany({
+    where: { auditRunId, status: "PENDING" },
+  });
+  if (pending.length === 0) return { kind: "error", message: "No pending suggestions." };
+
+  const totalSaved = pending.reduce((s, x) => s + x.kgCo2eSaved, 0);
+  const bindingMessage = buildBatchBindingMessage(pending.length, totalSaved);
+
+  try {
+    const ciba = await initiateCiba({
+      loginHint: buildLoginHint(me.auth0Sub),
+      bindingMessage,
+      scope: SCOPE,
+    });
+    return {
+      kind: "ok",
+      authReqId: ciba.authReqId,
+      bindingMessage,
+      count: pending.length,
+      totalSaved,
+    };
+  } catch (err) {
+    return { kind: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function checkBatchApproval(
+  authReqId: string,
+  auditRunId: string,
+): Promise<CheckBatchState> {
+  const me = await upsertSessionUser();
+  if (!me) return { kind: "error", message: "Not signed in." };
+
+  const result = await pollCibaToken(authReqId);
+
+  if (result.status === "pending") {
+    const nextPollMs = result.slowDown
+      ? Math.max((result.retryAfterSeconds ?? 10) * 1000, 6000)
+      : 6000;
+    return { kind: "pending", nextPollMs };
+  }
+
+  // Idempotency: if any Approval already exists for this batch, return the cached terminal state.
+  const existing = await prisma.approval.findFirst({ where: { authReqId } });
+  if (existing) {
+    if (existing.decision === "APPROVED") {
+      const count = await prisma.approval.count({ where: { authReqId } });
+      return { kind: "approved", appliedCount: count };
+    }
+    if (existing.decision === "REJECTED")
+      return { kind: "denied", reason: result.status === "denied" ? result.error : "denied" };
+    return { kind: "expired" };
+  }
+
+  const decision =
+    result.status === "approved"
+      ? "APPROVED"
+      : result.status === "denied"
+        ? "REJECTED"
+        : "EXPIRED";
+
+  const pending = await prisma.suggestion.findMany({
+    where: { auditRunId, status: "PENDING" },
+  });
+
+  const emissions = createMockEmissionsSource();
+  const proposedCodes = Array.from(new Set(pending.map((p) => p.proposedMaterialCode)));
+  const factors = await emissions.queryByMaterialCodes(proposedCodes);
+  const factorByCode = new Map(factors.map((f) => [f.materialCode, f]));
+
+  await prisma.$transaction(async (tx) => {
+    const rawForRow =
+      result.status === "approved"
+        ? (result.rawResponse as object)
+        : { status: result.status, ...(result.status === "denied" ? { error: result.error } : {}) };
+
+    for (const suggestion of pending) {
+      await tx.approval.create({
+        data: {
+          suggestionId: suggestion.id,
+          userId: me.id,
+          authReqId,
+          decision,
+          rawResponse: rawForRow,
+        },
+      });
+      await tx.suggestion.update({ where: { id: suggestion.id }, data: { status: decision } });
+
+      if (decision !== "APPROVED") continue;
+
+      const factor = factorByCode.get(suggestion.proposedMaterialCode);
+      if (!factor) continue;
+
+      const newMaterial = await tx.material.upsert({
+        where: { code: factor.materialCode },
+        create: {
+          code: factor.materialCode,
+          name: factor.materialName,
+          category: factor.category,
+          defaultUnit: factor.unit,
+        },
+        update: {},
+      });
+
+      await tx.bomItem.update({
+        where: { id: suggestion.originalItemId },
+        data: { materialId: newMaterial.id },
+      });
+    }
+  });
+
+  revalidatePath("/");
+
+  if (decision === "APPROVED") return { kind: "approved", appliedCount: pending.length };
+  if (decision === "REJECTED") return { kind: "denied", reason: result.status === "denied" ? result.error : "denied" };
   return { kind: "expired" };
 }

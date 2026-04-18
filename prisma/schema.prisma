@@ -113,16 +113,20 @@ model Suggestion {
 
 // Audit trail for every CIBA decision. `authReqId` is the Auth0
 // `auth_req_id` returned by /bc-authorize; judges will look at this.
+// `authReqId` is NOT unique because a single batch CIBA push can approve
+// multiple suggestions in one round-trip — each gets its own Approval row
+// sharing the same authReqId.
 model Approval {
   id           String           @id @default(cuid())
   suggestionId String           @unique
   suggestion   Suggestion       @relation(fields: [suggestionId], references: [id])
   userId       String
   user         User             @relation(fields: [userId], references: [id])
-  authReqId    String           @unique
+  authReqId    String
   decision     SuggestionStatus
   decidedAt    DateTime         @default(now())
   rawResponse  Json?
 
   @@index([userId])
+  @@index([authReqId])
 }
