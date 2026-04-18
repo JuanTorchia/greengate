@@ -1,40 +1,54 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.15 0 0);
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.15 0 0);
-  --color-primary: oklch(0.6 0.18 145);
-  --color-primary-foreground: oklch(0.98 0 0);
-  --color-secondary: oklch(0.96 0 0);
-  --color-secondary-foreground: oklch(0.2 0 0);
-  --color-muted: oklch(0.96 0 0);
-  --color-muted-foreground: oklch(0.5 0 0);
-  --color-accent: oklch(0.96 0.02 145);
-  --color-accent-foreground: oklch(0.2 0 0);
-  --color-destructive: oklch(0.6 0.22 25);
-  --color-destructive-foreground: oklch(0.98 0 0);
-  --color-border: oklch(0.9 0 0);
-  --color-input: oklch(0.9 0 0);
-  --color-ring: oklch(0.6 0.18 145);
-  --radius: 0.5rem;
-}
+  /* Palette (hex, from oneclicklca.com) */
+  --color-canvas: #F0EDE6;
+  --color-card: #FFFFFF;
+  --color-dark: #154B3E;
+  --color-ink: #000000;
+  --color-muted: #999999;
+  --color-brand-primary: #006726;
+  --color-brand-accent: #00C04B;
+  --color-brand-teal: #0C7B5F;
+  --color-warning: #A86B00;
+  --color-danger: #8B1A1A;
+  --color-hotspot: #C2410C;
+  --color-border: #E5E3DC;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: oklch(0.15 0 0);
-    --color-foreground: oklch(0.95 0 0);
-    --color-card: oklch(0.18 0 0);
-    --color-card-foreground: oklch(0.95 0 0);
-    --color-muted: oklch(0.22 0 0);
-    --color-muted-foreground: oklch(0.7 0 0);
-    --color-border: oklch(0.3 0 0);
-    --color-input: oklch(0.3 0 0);
-  }
+  /* Shadcn tokens mapped onto our palette so existing components keep working */
+  --color-background: var(--color-canvas);
+  --color-foreground: var(--color-ink);
+  --color-card-foreground: var(--color-ink);
+  --color-primary: var(--color-brand-accent);
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #F5F2EA;
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted-foreground: var(--color-muted);
+  --color-accent: #F5F2EA;
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-danger);
+  --color-destructive-foreground: #FFFFFF;
+  --color-input: var(--color-border);
+  --color-ring: var(--color-brand-accent);
+
+  --radius: 0.5rem;
+
+  /* Font families (variables come from next/font) */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), system-ui, sans-serif;
+  --font-ui: var(--font-poppins), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--color-brand-primary);
+  letter-spacing: -0.01em;
 }
