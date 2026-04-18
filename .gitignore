@@ -33,3 +33,9 @@ prisma/*.db-journal
 
 # railway
 .railway/
+
+# Auth0 credentials
+.env.auth0-web.tmp
+
+# Auth0 credentials
+.env.auth0-ciba.tmp
