@@ -1,5 +1,5 @@
 [build]
-builder = "NIXPACKS"
+builder = "RAILPACK"
 buildCommand = "npm ci && npm run db:generate && npm run build"
 
 [deploy]

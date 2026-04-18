@@ -349,4 +349,36 @@ decision, timestamp, and the suggestion details. End-to-end Phase 1 done.
 That's M5 — and that's the whole prize-winning flow ready. Phases 2 and 3
 make it richer; Phase 1 is the submission.
 
+## Sun 2026-04-19, 10:30 — Deploy
+
+Per Risk #4 in the plan ("Railway deploy issues surface late → mitigation:
+deploy during Phase 1 once login works"), I'm not waiting any longer. App
+goes up before Phase 2.
+
+- Added an empty service `web` in the existing `greengate` project alongside
+  the `Postgres` service.
+- Set env vars on `web` via CLI. Used Railway variable references:
+  `DATABASE_URL=${{Postgres.DATABASE_URL}}` (resolves to the internal
+  `postgres.railway.internal:5432`, no proxy hop) and
+  `APP_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`. Caveat: the `RAILWAY_
+  PUBLIC_DOMAIN` reference resolves to empty *until* a domain exists on
+  the service, so `APP_BASE_URL` came out as just `"https://"` until I
+  generated the domain and re-set the var explicitly.
+- Generated public domain: `web-production-5dcc8.up.railway.app` on port
+  3000.
+- Updated `railway.toml`: `NIXPACKS` → `RAILPACK` (per current Railway
+  guidance — Nixpacks is legacy). Build = `npm ci && npm run db:generate
+  && npm run build`. Start = `npm run db:deploy && npm start`. The
+  `db:deploy` step runs `prisma migrate deploy` on every boot — idempotent,
+  fine.
+- Added the prod callback `https://web-production-5dcc8.up.railway.app/auth/
+  callback` and matching logout URL to the Auth0 RWA via MCP, so the prod
+  domain works the moment the build finishes.
+- `railway up --service web --detach` → built clean on first try, ~5 min
+  total. `GET /` returns 200, `GET /auth/login` 307s to Auth0 with the
+  correct prod `redirect_uri`. End-to-end auth flow on prod is unblocked
+  pending a manual click-through.
+
+Risk #4 is now closed with one full day of slack to spare.
+
 <!-- Future entries go below. Keep them short, honest, and specific. -->
