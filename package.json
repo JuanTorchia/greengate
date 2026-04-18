@@ -16,7 +16,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "auth0:smoke": "tsx --env-file=.env scripts/auth0-mgmt-smoke.ts"
+    "auth0:smoke": "tsx --env-file=.env scripts/auth0-mgmt-smoke.ts",
+    "auth0:bind": "tsx --env-file=.env scripts/auth0-bind-action.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
