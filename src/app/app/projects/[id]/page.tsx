@@ -3,6 +3,7 @@ import { loadProjectDetail } from "@/features/project-detail/server/project-deta
 import { ProjectHeader } from "@/features/project-detail/components/project-header";
 import { SummaryTiles } from "@/features/project-detail/components/summary-tiles";
 import { BomTable, type BomRow } from "@/features/project-detail/components/bom-table";
+import { SuggestionCard, type SuggestionCardData } from "@/features/project-detail/components/suggestion-card";
 import { createMockEmissionsSource } from "@/lib/emissions/mock";
 import type { StatusKind } from "@/components/ui/status-badge";
 
@@ -99,6 +100,41 @@ export default async function ProjectDetailPage({
       <section className="space-y-3">
         <h2 className="text-xl font-medium text-brand-primary">Bill of Materials</h2>
         <BomTable rows={rowsUnranked} />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-medium text-brand-primary">
+          Agent suggestions ({run?.suggestions.length ?? 0})
+        </h2>
+        {run && run.suggestions.length > 0 ? (
+          <div className="space-y-4">
+            {run.suggestions.map((s) => {
+              const data: SuggestionCardData = {
+                id: s.id,
+                originalCode: s.originalItem.material.code,
+                originalName: s.originalItem.material.name,
+                proposedCode: s.proposedMaterialCode,
+                proposedName: s.proposedMaterialName,
+                kgCo2eSaved: s.kgCo2eSaved,
+                technicalRationale: s.technicalRationale,
+                riskNotes: s.riskNotes,
+                status: s.status,
+                approverName: project.responsibleApproverName,
+                approverRole: project.responsibleApproverRole,
+                approvedBy:
+                  s.status === "APPROVED" && s.approval
+                    ? { name: s.approval.user.name ?? s.approval.user.email, at: s.approval.decidedAt }
+                    : null,
+                rejectedReason: null,
+              };
+              return <SuggestionCard key={s.id} data={data} />;
+            })}
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-border bg-card p-6 text-sm text-muted">
+            {run ? "Agent found no substitutions that meet current thresholds." : "No audit run yet."}
+          </p>
+        )}
       </section>
     </div>
   );
