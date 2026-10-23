@@ -11,7 +11,7 @@ export function Hero() {
           </h1>
           <p className="mt-6 text-lg text-ink/80 max-w-xl">
             Construction is 37% of global energy-related CO₂ — most of it decided at the
-            Bill-of-Materials stage. GreenGate's agent audits each BOM against the ICE Database
+            Bill-of-Materials stage. GreenGate&apos;s agent audits each BOM against the ICE Database
             and proposes lower-carbon substitutions. The responsible engineer approves each swap
             with a single push on their phone — cryptographically bound to the decision via Auth0 CIBA.
           </p>
